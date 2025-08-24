@@ -83,19 +83,19 @@ export async function POST(req: NextRequest) {
     console.log(`Processing payment status: status=${status}, result=${result}, action=${callbackData.action}`);
     
     // Map EDFA statuses to valid database status values
-    if (status === "settled" || status === "completed" || status === "success" || result === "success") {
+    if (status === "settled" || status === "SETTLED" || status === "completed" || status === "success" || status === "SUCCESS" || result === "success" || result === "SUCCESS") {
       paymentStatus = "completed";
-    } else if (status === "declined" || status === "failed" || status === "error" || result === "failed" || result === "error") {
+    } else if (status === "declined" || status === "DECLINED" || status === "failed" || status === "FAILED" || status === "error" || status === "ERROR" || result === "failed" || result === "FAILED" || result === "error" || result === "ERROR") {
       paymentStatus = "failed";
-    } else if (status === "pending" || status === "processing" || result === "pending") {
+    } else if (status === "pending" || status === "PENDING" || status === "processing" || status === "PROCESSING" || result === "pending" || result === "PENDING") {
       paymentStatus = "pending";
-    } else if (status === "cancelled" || status === "canceled") {
+    } else if (status === "cancelled" || status === "CANCELLED" || status === "canceled" || status === "CANCELED") {
       paymentStatus = "cancelled";
     } else {
       // Check for other indicators of success/failure
-      if (callbackData.action === "SALE" && result === "success") {
+      if (callbackData.action === "SALE" && (result === "success" || result === "SUCCESS")) {
         paymentStatus = "completed";
-      } else if (result === "failed" || result === "error") {
+      } else if (result === "failed" || result === "FAILED" || result === "error" || result === "ERROR") {
         paymentStatus = "failed";
       } else {
         // For EDFA, if we have a transaction ID and the action is SALE, 
@@ -109,6 +109,15 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`Determined payment status: ${paymentStatus} for payment ${paymentId}`);
+    console.log(`Status mapping details:`, {
+      originalStatus: status,
+      originalResult: result,
+      action: callbackData.action,
+      mappedStatus: paymentStatus,
+      reason: status === "SETTLED" ? "SETTLED status from EDFA" : 
+              result === "SUCCESS" ? "SUCCESS result from EDFA" :
+              "Other status mapping logic"
+    });
 
     // Only update if the new status is different from current status
     if (payment_order.status !== paymentStatus) {
@@ -272,10 +281,10 @@ export async function GET(req: NextRequest) {
               );
               paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
-            } else if (status === "settled") {
+            } else if (status === "settled" || status === "SETTLED") {
               paymentStatus = "completed";
               redirectUrl = "/upload-resume";
-            } else if (status === "declined") {
+            } else if (status === "declined" || status === "DECLINED") {
               paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
             } else if (status === "3ds") {
