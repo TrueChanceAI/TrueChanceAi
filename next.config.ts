@@ -36,6 +36,8 @@ const nextConfig: NextConfig = {
     `;
 
     // Production CSP: stricter
+    // Note: The "link preload" warning in console is usually harmless and related to Next.js optimization
+    // It doesn't affect payment functionality
     const prodCsp = `
       default-src 'self';
       script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://www.googletagmanager.com;

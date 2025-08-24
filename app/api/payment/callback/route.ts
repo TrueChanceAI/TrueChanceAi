@@ -67,10 +67,45 @@ export async function POST(req: NextRequest) {
       console.log(
         `Payment ${paymentId} already processed with status: ${payment_order.status}`
       );
-      return NextResponse.json({ 
-        status: "already_processed", 
-        current_status: payment_order.status 
-      });
+      
+      // Special handling for 3D Secure flow: allow failed payments to be updated to pending
+      // This handles cases where a payment was marked as failed during 3D Secure but is actually still processing
+      if (payment_order.status === "failed") {
+        const status = callbackData.status || callbackData.payment_status || callbackData.order_status;
+        const result = callbackData.result;
+        
+        // If we're getting a REDIRECT or AUTHENTICATION_PENDING status, the payment is actually still processing
+        if (status === "REDIRECT" || status === "AUTHENTICATION_PENDING" || result === "REDIRECT") {
+          console.log(`🔄 3D Secure flow detected: Updating failed payment back to pending for status: ${status}`);
+          // Allow the status update to proceed
+        } else {
+          console.log(`❌ Payment already processed with status: ${payment_order.status}, cannot update to: ${status}`);
+          return NextResponse.json({ 
+            status: "already_processed", 
+            current_status: payment_order.status 
+          });
+        }
+      } else if (payment_order.status === "completed") {
+        // If payment is already completed, redirect to interview page
+        const url = process.env.NEXT_PUBLIC_APP_URL;
+        console.log(`Payment already completed, redirecting to interview page`);
+        return NextResponse.redirect(
+          new URL(
+            `/interview?interviewId=${payment_order.interview_id}&paymentId=${paymentId}`,
+            url
+          )
+        );
+      } else {
+        // For other statuses, redirect based on status
+        const redirectUrl = payment_order.status === "failed" ? "/payment-failed" : "/upload-resume";
+        const url = process.env.NEXT_PUBLIC_APP_URL;
+        return NextResponse.redirect(
+          new URL(
+            `${redirectUrl}?paymentId=${paymentId}&interviewId=${payment_order.interview_id}`,
+            url
+          )
+        );
+      }
     }
 
     // Update payment order status based on callback data
@@ -81,6 +116,14 @@ export async function POST(req: NextRequest) {
     const result = callbackData.result;
     
     console.log(`Processing payment status: status=${status}, result=${result}, action=${callbackData.action}`);
+    console.log(`📊 Payment flow tracking:`, {
+      paymentId,
+      currentDbStatus: payment_order.status,
+      newStatus: status,
+      newResult: result,
+      is3DSecure: status === "REDIRECT" || status === "AUTHENTICATION_PENDING" || result === "REDIRECT",
+      timestamp: new Date().toISOString()
+    });
     
     // Map EDFA statuses to valid database status values
     if (status === "settled" || status === "SETTLED" || status === "completed" || status === "success" || status === "SUCCESS" || result === "success" || result === "SUCCESS") {
