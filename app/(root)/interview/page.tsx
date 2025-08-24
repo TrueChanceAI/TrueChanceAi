@@ -117,11 +117,21 @@ function InterviewProtectedRoute({ children }: { children: React.ReactNode }) {
     interviewId: interview.id,
     paymentId: interview.payment_id,
     paymentStatus: interview.payment_status,
-    interviewData: interview
+    interviewData: interview,
+    interviewKeys: Object.keys(interview),
+    paymentStatusType: typeof interview.payment_status,
+    paymentStatusLength: interview.payment_status?.length,
+    paymentStatusExact: `"${interview.payment_status}"`
   });
 
   if (interview.payment_status !== "completed") {
-    console.log("❌ Payment not completed:", interview.payment_status);
+    console.log("❌ Payment not completed:", {
+      currentStatus: interview.payment_status,
+      expectedStatus: "completed",
+      isEqual: interview.payment_status === "completed",
+      comparison: `"${interview.payment_status}" === "completed"`,
+      result: interview.payment_status === "completed"
+    });
     
     // If we have a payment ID but the status is not completed, log the mismatch
     if (interview.payment_id) {
@@ -165,6 +175,32 @@ function InterviewProtectedRoute({ children }: { children: React.ReactNode }) {
           >
             Go to Upload Resume
           </button>
+          
+          {/* Debug button to check payment status */}
+          {interview.payment_id && (
+            <button
+              onClick={async () => {
+                try {
+                  console.log("🔍 Manually checking payment status...");
+                  const response = await fetch(`/api/payment/status?paymentId=${interview.payment_id}`);
+                  if (response.ok) {
+                    const data = await response.json();
+                    console.log("📊 Manual payment status check result:", data);
+                    alert(`Payment Status: ${data.status}\nAmount: ${data.amount} ${data.currency}\nInterview ID: ${data.interview_id}`);
+                  } else {
+                    console.error("Failed to check payment status");
+                    alert("Failed to check payment status");
+                  }
+                } catch (error) {
+                  console.error("Error checking payment status:", error);
+                  alert("Error checking payment status");
+                }
+              }}
+              className="mt-2 px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+            >
+              Debug: Check Payment Status
+            </button>
+          )}
         </div>
       </div>
     );
