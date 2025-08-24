@@ -113,7 +113,25 @@ function InterviewProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   // Check payment status
+  console.log("🔍 Payment validation debug:", {
+    interviewId: interview.id,
+    paymentId: interview.payment_id,
+    paymentStatus: interview.payment_status,
+    interviewData: interview
+  });
+
   if (interview.payment_status !== "completed") {
+    console.log("❌ Payment not completed:", interview.payment_status);
+    
+    // If we have a payment ID but the status is not completed, log the mismatch
+    if (interview.payment_id) {
+      console.log("🔍 Payment ID exists but status mismatch:", {
+        paymentId: interview.payment_id,
+        interviewStatus: interview.payment_status,
+        expectedStatus: "completed"
+      });
+    }
+    
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
         <div className="bg-zinc-900 rounded-2xl p-6 sm:p-8 flex flex-col items-center gap-4 min-w-[280px] sm:min-w-[320px] relative shadow-xl mx-4">
@@ -139,7 +157,7 @@ function InterviewProtectedRoute({ children }: { children: React.ReactNode }) {
           <p className="text-sm text-gray-300 text-center">
             {interview.payment_status === "pending"
               ? "Your payment is still being processed. Please wait for confirmation."
-              : "Payment is required to access this interview."}
+              : `Payment is required to access this interview. Current status: ${interview.payment_status}`}
           </p>
           <button
             onClick={() => router.push("/upload-resume")}
@@ -151,6 +169,8 @@ function InterviewProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
+
+  console.log("✅ Payment validation passed - interview should be accessible");
 
   // Check if interview is already conducted (handle both string and boolean types)
   const isConducted = String(interview.is_conducted).toLowerCase() === "true";
@@ -408,7 +428,7 @@ function InterviewPageContent() {
       </div>
 
       <Agent
-        interviewId={interviewId}
+        interviewId={interviewId || ""}
         questions={interview.interview_questions}
         type="interview"
         userName={interview.candidate_name || ""}

@@ -78,40 +78,60 @@ export async function POST(req: NextRequest) {
     
     // Determine status from callback data - handle various possible field names
     const status = callbackData.status || callbackData.payment_status || callbackData.order_status;
+    const result = callbackData.result;
     
-    if (status === "settled" || status === "completed" || status === "success") {
+    console.log(`Processing payment status: status=${status}, result=${result}, action=${callbackData.action}`);
+    
+    if (status === "settled" || status === "completed" || status === "success" || result === "success") {
       paymentStatus = "completed";
-    } else if (status === "declined" || status === "failed" || status === "error") {
+    } else if (status === "declined" || status === "failed" || status === "error" || result === "failed" || result === "error") {
       paymentStatus = "declined";
-    } else if (status === "pending" || status === "processing") {
+    } else if (status === "pending" || status === "processing" || result === "pending") {
       paymentStatus = "pending";
     } else {
       // Check for other indicators of success/failure
-      if (callbackData.action === "SALE" && callbackData.result === "success") {
+      if (callbackData.action === "SALE" && result === "success") {
         paymentStatus = "completed";
-      } else if (callbackData.result === "failed" || callbackData.result === "error") {
+      } else if (result === "failed" || result === "error") {
         paymentStatus = "declined";
       } else {
-        paymentStatus = "declined"; // Default to declined for unknown statuses
+        // For EDFA, if we have a transaction ID and the action is SALE, 
+        // and the status is not explicitly failed, treat as pending
+        if (callbackData.action === "SALE" && callbackData.trans_id && !result) {
+          paymentStatus = "pending";
+        } else {
+          paymentStatus = "declined"; // Default to declined for unknown statuses
+        }
       }
     }
 
-    // Update payment order status in database
-    const { error: updateError } = await supabaseServer
-      .from("payment_orders")
-      .update({
-        status: paymentStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", paymentId);
+    console.log(`Determined payment status: ${paymentStatus} for payment ${paymentId}`);
 
-    if (updateError) {
-      console.error("Failed to update payment order status:", updateError);
-      return NextResponse.json({ error: "Failed to update payment status" }, { status: 500 });
+    // Only update if the new status is different from current status
+    if (payment_order.status !== paymentStatus) {
+      console.log(`Updating payment status from ${payment_order.status} to ${paymentStatus}`);
+      
+      // Update payment order status in database
+      const { error: updateError } = await supabaseServer
+        .from("payment_orders")
+        .update({
+          status: paymentStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", paymentId);
+
+      if (updateError) {
+        console.error("Failed to update payment order status:", updateError);
+        return NextResponse.json({ error: "Failed to update payment status" }, { status: 500 });
+      }
+    } else {
+      console.log(`Payment status unchanged: ${payment_order.status}`);
     }
 
     // Update interview to link to payment order if payment is completed
     if (paymentStatus === "completed") {
+      console.log(`Updating interview ${payment_order.interview_id} with completed payment`);
+      
       const { error: updateInterviewError } = await supabaseServer
         .from("interviews")
         .update({ payment_id: paymentId, payment_status: "completed" })
@@ -119,10 +139,12 @@ export async function POST(req: NextRequest) {
 
       if (updateInterviewError) {
         console.error("Failed to update interview:", updateInterviewError);
+      } else {
+        console.log(`Successfully updated interview ${payment_order.interview_id}`);
       }
+    } else if (paymentStatus === "pending") {
+      console.log(`Payment ${paymentId} is still pending - interview not yet accessible`);
     }
-
-    console.log(`Payment ${paymentId} status updated to: ${paymentStatus}`);
     
     return NextResponse.json({ 
       success: true, 
