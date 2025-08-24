@@ -2,6 +2,104 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase-server";
 import { EDFAPayment } from "@/lib/edfaPay";
 
+// Handle POST requests from payment gateway
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    console.log("Payment callback POST received:", body);
+
+    // Extract payment ID from the request body
+    const paymentId = body.paymentId || body.order_id || body.transaction_id;
+
+    if (!paymentId) {
+      console.error("No payment ID in callback body:", body);
+      return NextResponse.json({ error: "Payment ID required" }, { status: 400 });
+    }
+
+    // Get payment order from database
+    const { data: payment_order, error: payment_order_error } =
+      await supabaseServer
+        .from("payment_orders")
+        .select("*")
+        .eq("id", paymentId)
+        .single();
+
+    if (payment_order_error) {
+      console.error("Payment order error:", payment_order_error);
+      return NextResponse.json({ error: "Payment order not found" }, { status: 404 });
+    }
+
+    if (!payment_order) {
+      console.error("Payment order not found:", paymentId);
+      return NextResponse.json({ error: "Payment order not found" }, { status: 404 });
+    }
+
+    // Check if payment was already processed
+    if (payment_order.status && payment_order.status !== "pending") {
+      console.log(
+        `Payment ${paymentId} already processed with status: ${payment_order.status}`
+      );
+      return NextResponse.json({ 
+        status: "already_processed", 
+        current_status: payment_order.status 
+      });
+    }
+
+    // Update payment order status based on callback data
+    let paymentStatus = "unknown";
+    
+    // Determine status from callback data
+    if (body.status === "settled" || body.status === "completed") {
+      paymentStatus = "completed";
+    } else if (body.status === "declined" || body.status === "failed") {
+      paymentStatus = "declined";
+    } else if (body.status === "pending") {
+      paymentStatus = "pending";
+    } else {
+      paymentStatus = "declined"; // Default to declined for unknown statuses
+    }
+
+    // Update payment order status in database
+    const { error: updateError } = await supabaseServer
+      .from("payment_orders")
+      .update({
+        status: paymentStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", paymentId);
+
+    if (updateError) {
+      console.error("Failed to update payment order status:", updateError);
+      return NextResponse.json({ error: "Failed to update payment status" }, { status: 500 });
+    }
+
+    // Update interview to link to payment order if payment is completed
+    if (paymentStatus === "completed") {
+      const { error: updateInterviewError } = await supabaseServer
+        .from("interviews")
+        .update({ payment_id: paymentId, payment_status: "completed" })
+        .eq("id", payment_order.interview_id);
+
+      if (updateInterviewError) {
+        console.error("Failed to update interview:", updateInterviewError);
+      }
+    }
+
+    console.log(`Payment ${paymentId} status updated to: ${paymentStatus}`);
+    
+    return NextResponse.json({ 
+      success: true, 
+      status: paymentStatus,
+      payment_id: paymentId 
+    });
+
+  } catch (error) {
+    console.error("Payment callback POST error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// Handle GET requests for manual redirects (existing functionality)
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
