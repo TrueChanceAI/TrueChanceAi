@@ -5,14 +5,42 @@ import { EDFAPayment } from "@/lib/edfaPay";
 // Handle POST requests from payment gateway
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    console.log("Payment callback POST received:", body);
+    let callbackData: any = {};
+    
+    // Check content type to determine how to parse the request
+    const contentType = req.headers.get("content-type") || "";
+    
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      // Handle form data from payment gateway
+      const formData = await req.formData();
+      for (const [key, value] of formData.entries()) {
+        callbackData[key] = value;
+      }
+    } else if (contentType.includes("application/json")) {
+      // Handle JSON data
+      callbackData = await req.json();
+    } else {
+      // Try to parse as text first, then as form data
+      try {
+        const text = await req.text();
+        // Try to parse as form data
+        const urlParams = new URLSearchParams(text);
+        for (const [key, value] of urlParams.entries()) {
+          callbackData[key] = value;
+        }
+      } catch (textError) {
+        console.error("Failed to parse request as text:", textError);
+        return NextResponse.json({ error: "Invalid request format" }, { status: 400 });
+      }
+    }
 
-    // Extract payment ID from the request body
-    const paymentId = body.paymentId || body.order_id || body.transaction_id;
+    console.log("Payment callback POST received:", callbackData);
+
+    // Extract payment ID from the callback data
+    const paymentId = callbackData.paymentId || callbackData.order_id || callbackData.transaction_id || callbackData.orderId;
 
     if (!paymentId) {
-      console.error("No payment ID in callback body:", body);
+      console.error("No payment ID in callback data:", callbackData);
       return NextResponse.json({ error: "Payment ID required" }, { status: 400 });
     }
 
@@ -48,15 +76,24 @@ export async function POST(req: NextRequest) {
     // Update payment order status based on callback data
     let paymentStatus = "unknown";
     
-    // Determine status from callback data
-    if (body.status === "settled" || body.status === "completed") {
+    // Determine status from callback data - handle various possible field names
+    const status = callbackData.status || callbackData.payment_status || callbackData.order_status;
+    
+    if (status === "settled" || status === "completed" || status === "success") {
       paymentStatus = "completed";
-    } else if (body.status === "declined" || body.status === "failed") {
+    } else if (status === "declined" || status === "failed" || status === "error") {
       paymentStatus = "declined";
-    } else if (body.status === "pending") {
+    } else if (status === "pending" || status === "processing") {
       paymentStatus = "pending";
     } else {
-      paymentStatus = "declined"; // Default to declined for unknown statuses
+      // Check for other indicators of success/failure
+      if (callbackData.action === "SALE" && callbackData.result === "success") {
+        paymentStatus = "completed";
+      } else if (callbackData.result === "failed" || callbackData.result === "error") {
+        paymentStatus = "declined";
+      } else {
+        paymentStatus = "declined"; // Default to declined for unknown statuses
+      }
     }
 
     // Update payment order status in database
