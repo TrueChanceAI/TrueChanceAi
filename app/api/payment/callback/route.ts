@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Update payment order status based on callback data
-    let paymentStatus = "unknown";
+    let paymentStatus: "pending" | "completed" | "failed" | "cancelled" = "pending";
     
     // Determine status from callback data - handle various possible field names
     const status = callbackData.status || callbackData.payment_status || callbackData.order_status;
@@ -82,25 +82,28 @@ export async function POST(req: NextRequest) {
     
     console.log(`Processing payment status: status=${status}, result=${result}, action=${callbackData.action}`);
     
+    // Map EDFA statuses to valid database status values
     if (status === "settled" || status === "completed" || status === "success" || result === "success") {
       paymentStatus = "completed";
     } else if (status === "declined" || status === "failed" || status === "error" || result === "failed" || result === "error") {
-      paymentStatus = "declined";
+      paymentStatus = "failed";
     } else if (status === "pending" || status === "processing" || result === "pending") {
       paymentStatus = "pending";
+    } else if (status === "cancelled" || status === "canceled") {
+      paymentStatus = "cancelled";
     } else {
       // Check for other indicators of success/failure
       if (callbackData.action === "SALE" && result === "success") {
         paymentStatus = "completed";
       } else if (result === "failed" || result === "error") {
-        paymentStatus = "declined";
+        paymentStatus = "failed";
       } else {
         // For EDFA, if we have a transaction ID and the action is SALE, 
         // and the status is not explicitly failed, treat as pending
         if (callbackData.action === "SALE" && callbackData.trans_id && !result) {
           paymentStatus = "pending";
         } else {
-          paymentStatus = "declined"; // Default to declined for unknown statuses
+          paymentStatus = "failed"; // Default to failed for unknown statuses
         }
       }
     }
@@ -142,8 +145,33 @@ export async function POST(req: NextRequest) {
       } else {
         console.log(`Successfully updated interview ${payment_order.interview_id}`);
       }
+    } else if (paymentStatus === "failed") {
+      console.log(`Updating interview ${payment_order.interview_id} with failed payment`);
+      
+      const { error: updateInterviewError } = await supabaseServer
+        .from("interviews")
+        .update({ payment_id: paymentId, payment_status: "failed" })
+        .eq("id", payment_order.interview_id);
+
+      if (updateInterviewError) {
+        console.error("Failed to update interview:", updateInterviewError);
+      } else {
+        console.log(`Successfully updated interview ${payment_order.interview_id}`);
+      }
     } else if (paymentStatus === "pending") {
       console.log(`Payment ${paymentId} is still pending - interview not yet accessible`);
+      
+      // Update interview to pending status
+      const { error: updateInterviewError } = await supabaseServer
+        .from("interviews")
+        .update({ payment_id: paymentId, payment_status: "pending" })
+        .eq("id", payment_order.interview_id);
+
+      if (updateInterviewError) {
+        console.error("Failed to update interview:", updateInterviewError);
+      } else {
+        console.log(`Successfully updated interview ${payment_order.interview_id} to pending`);
+      }
     }
     
     return NextResponse.json({ 
@@ -242,33 +270,33 @@ export async function GET(req: NextRequest) {
               console.error(
                 `Payment amount/currency mismatch. Expected: ${expectedAmount} SAR, Got: ${receivedAmount} ${orderCurrency}`
               );
-              paymentStatus = "declined"; // Use valid database status instead of AMOUNT_MISMATCH
+              paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
             } else if (status === "settled") {
               paymentStatus = "completed";
               redirectUrl = "/upload-resume";
             } else if (status === "declined") {
-              paymentStatus = "declined";
+              paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
             } else if (status === "3ds") {
-              paymentStatus = "3ds";
+              paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
             } else if (status === "redirect") {
-              paymentStatus = "redirect";
+              paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
             } else if (status === "refund") {
-              paymentStatus = "refund";
+              paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
             } else {
               // Unknown status, treat as failed
-              paymentStatus = "declined"; // Use valid database status
+              paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
             }
           } else {
             console.error(
               "Payment response missing amount or currency information"
             );
-            paymentStatus = "declined"; // Use valid database status instead of INVALID_RESPONSE
+            paymentStatus = "failed"; // Use valid database status
             redirectUrl = "/payment-failed";
           }
         } else {
@@ -277,7 +305,7 @@ export async function GET(req: NextRequest) {
             paymentStatus = "completed";
             redirectUrl = "/upload-resume";
           } else {
-            paymentStatus = "declined"; // Use valid database status
+            paymentStatus = "failed"; // Use valid database status
             redirectUrl = "/payment-failed";
           }
         }

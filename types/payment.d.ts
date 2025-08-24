@@ -24,11 +24,8 @@ export interface BillingAddress {
 export type PaymentStatus =
   | "pending"
   | "completed"
-  | "declined"
-  | "3ds"
-  | "redirect"
-  | "refund"
-  | "unknown";
+  | "failed"
+  | "cancelled";
 
 export interface PaymentInitiateRequest {
   interviewId: string;
