@@ -237,12 +237,28 @@ export async function GET(req: NextRequest) {
       console.log(
         `Payment ${paymentId} already processed with status: ${payment_order.status}`
       );
-      // Redirect based on existing status
-      const redirectUrl =
-        payment_order.status === "completed"
-          ? "/upload-resume"
-          : "/payment-failed";
-      return NextResponse.redirect(new URL(redirectUrl, req.url));
+      
+      // If payment is already completed, redirect to interview page
+      if (payment_order.status === "completed") {
+        const url = process.env.NEXT_PUBLIC_APP_URL;
+        console.log(`Payment already completed, redirecting to interview page`);
+        return NextResponse.redirect(
+          new URL(
+            `/interview?interviewId=${payment_order.interview_id}&paymentId=${paymentId}`,
+            url
+          )
+        );
+      }
+      
+      // For other statuses, redirect based on status
+      const redirectUrl = payment_order.status === "failed" ? "/payment-failed" : "/upload-resume";
+      const url = process.env.NEXT_PUBLIC_APP_URL;
+      return NextResponse.redirect(
+        new URL(
+          `${redirectUrl}?paymentId=${paymentId}&interviewId=${payment_order.interview_id}`,
+          url
+        )
+      );
     }
 
     const edfaPay = new EDFAPayment();
@@ -285,7 +301,7 @@ export async function GET(req: NextRequest) {
               redirectUrl = "/payment-failed";
             } else if (status === "settled" || status === "SETTLED") {
               paymentStatus = "completed";
-              redirectUrl = "/upload-resume";
+              redirectUrl = `/interview?interviewId=${payment_order.interview_id}&paymentId=${paymentId}`;
             } else if (status === "declined" || status === "DECLINED") {
               paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
@@ -314,7 +330,7 @@ export async function GET(req: NextRequest) {
           // Fallback: try to extract status from message
           if (response.message && response.message.includes("settled")) {
             paymentStatus = "completed";
-            redirectUrl = "/upload-resume";
+            redirectUrl = `/interview?interviewId=${payment_order.interview_id}&paymentId=${paymentId}`;
           } else {
             paymentStatus = "failed"; // Use valid database status
             redirectUrl = "/payment-failed";
@@ -354,13 +370,25 @@ export async function GET(req: NextRequest) {
 
         const url = process.env.NEXT_PUBLIC_APP_URL;
         // Redirect user based on payment status
-        // ?paymentId=1234567890
-        return NextResponse.redirect(
-          new URL(
-            `${redirectUrl}?paymentId=${paymentId}&interviewId=${payment_order.interview_id}`,
-            url
-          )
-        );
+        console.log(`🔄 Final redirect logic:`, {
+          redirectUrl,
+          hasQueryParams: redirectUrl.includes("?"),
+          finalUrl: redirectUrl.includes("?") ? redirectUrl : `${redirectUrl}?paymentId=${paymentId}&interviewId=${payment_order.interview_id}`
+        });
+        
+        // Check if redirectUrl already contains query parameters
+        if (redirectUrl.includes("?")) {
+          // redirectUrl already has query parameters, use it as is
+          console.log(`✅ Using redirectUrl as is (already has query params): ${redirectUrl}`);
+          return NextResponse.redirect(new URL(redirectUrl, url));
+        } else {
+          // redirectUrl doesn't have query parameters, append them
+          const finalUrl = `${redirectUrl}?paymentId=${paymentId}&interviewId=${payment_order.interview_id}`;
+          console.log(`✅ Appending query params to redirectUrl: ${finalUrl}`);
+          return NextResponse.redirect(
+            new URL(finalUrl, url)
+          );
+        }
       } catch (parseError) {
         console.error("Failed to parse payment status:", parseError);
         const url = process.env.NEXT_PUBLIC_APP_URL;
