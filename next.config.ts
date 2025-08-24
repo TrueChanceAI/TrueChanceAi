@@ -41,7 +41,7 @@ const nextConfig: NextConfig = {
       script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://www.googletagmanager.com;
       style-src 'self' 'unsafe-inline' blob: https://fonts.googleapis.com;
       font-src 'self' https://fonts.gstatic.com;
-      connect-src 'self' https://www.google-analytics.com https://www.googletagmanager.com;
+      connect-src 'self' https://www.google-analytics.com https://www.googletagmanager.com https://api.vapi.ai https://*.vapi.ai;
       img-src 'self' data: https://www.googletagmanager.com https://www.google-analytics.com https://flagcdn.com;
       media-src 'self' blob: data:;
       worker-src 'self' blob:;
