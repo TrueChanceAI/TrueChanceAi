@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       paymentStatus = "completed";
     } else if (status === "declined" || status === "DECLINED" || status === "failed" || status === "FAILED" || status === "error" || status === "ERROR" || result === "failed" || result === "FAILED" || result === "error" || result === "ERROR") {
       paymentStatus = "failed";
-    } else if (status === "pending" || status === "PENDING" || status === "processing" || status === "PROCESSING" || status === "redirect" || status === "REDIRECT" || result === "pending" || result === "PENDING" || result === "redirect" || result === "REDIRECT") {
+    } else if (status === "pending" || status === "PENDING" || status === "processing" || status === "PROCESSING" || status === "redirect" || status === "REDIRECT" || status === "authentication_pending" || status === "AUTHENTICATION_PENDING" || result === "pending" || result === "PENDING" || result === "redirect" || result === "REDIRECT") {
       paymentStatus = "pending";
     } else if (status === "cancelled" || status === "CANCELLED" || status === "canceled" || status === "CANCELED") {
       paymentStatus = "cancelled";
@@ -118,6 +118,7 @@ export async function POST(req: NextRequest) {
               result === "SUCCESS" ? "SUCCESS result from EDFA" :
               status === "REDIRECT" ? "REDIRECT status - 3D Secure authentication required (payment processing)" :
               result === "REDIRECT" ? "REDIRECT result - 3D Secure authentication required (payment processing)" :
+              status === "AUTHENTICATION_PENDING" ? "AUTHENTICATION_PENDING status - 3D Secure authentication in progress (payment processing)" :
               "Other status mapping logic"
     });
 
@@ -305,6 +306,9 @@ export async function GET(req: NextRequest) {
             } else if (status === "declined" || status === "DECLINED") {
               paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
+            } else if (status === "authentication_pending" || status === "AUTHENTICATION_PENDING") {
+              paymentStatus = "pending"; // 3D Secure authentication in progress
+              redirectUrl = "/upload-resume"; // Keep user waiting for completion
             } else if (status === "3ds") {
               paymentStatus = "pending"; // REDIRECT/3DS means payment is processing, not failed
               redirectUrl = "/upload-resume"; // Keep user on the page to wait for completion
