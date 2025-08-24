@@ -15,6 +15,7 @@ function InterviewProtectedRoute({ children }: { children: React.ReactNode }) {
   const paymentId = searchParams.get("paymentId");
   const router = useRouter();
   const user = useSelector((s: RootState) => s.me.user);
+  const { t } = useLanguage();
 
   const {
     interview,
@@ -123,6 +124,122 @@ function InterviewProtectedRoute({ children }: { children: React.ReactNode }) {
     paymentStatusLength: interview.payment_status?.length,
     paymentStatusExact: `"${interview.payment_status}"`
   });
+
+  // Allow access for pending payments (EDFA payments that are processing)
+  if (interview.payment_status === "failed") {
+    console.log("❌ Payment failed - access denied");
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div className="bg-zinc-900 rounded-2xl p-6 sm:p-8 flex flex-col items-center gap-4 min-w-[280px] sm:min-w-[320px] relative shadow-xl mx-4">
+          <div className="w-16 h-16 bg-red-900/20 rounded-full flex items-center justify-center">
+            <svg
+              className="w-8 h-8 text-red-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-white text-center">
+            Payment Failed
+          </h2>
+          <p className="text-sm text-gray-300 text-center">
+            Your payment was declined. Please try again with a different payment method.
+          </p>
+          <button
+            onClick={() => router.push("/upload-resume")}
+            className="mt-2 px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // For pending payments, show a processing message but allow access
+  if (interview.payment_status === "pending") {
+    console.log("⏳ Payment pending - allowing access with processing notice");
+    
+    // Background payment monitoring for pending payments
+    useEffect(() => {
+      if (interview.payment_id && interview.payment_status === "pending") {
+        const checkPaymentStatus = async () => {
+          try {
+            const response = await fetch(`/api/payment/status?paymentId=${interview.payment_id}`);
+            if (response.ok) {
+              const data = await response.json();
+              console.log("🔄 Background payment check:", data);
+              
+              // If payment is completed, refresh the page to show completed state
+              if (data.status === "completed") {
+                console.log("✅ Payment completed in background, refreshing page");
+                window.location.reload();
+              }
+            }
+          } catch (error) {
+            console.error("Background payment check failed:", error);
+          }
+        };
+
+        // Check payment status every 10 seconds
+        const interval = setInterval(checkPaymentStatus, 10000);
+        
+        // Initial check
+        checkPaymentStatus();
+        
+        return () => clearInterval(interval);
+      }
+    }, [interview.payment_id, interview.payment_status]);
+
+    return (
+      <div className="px-4 sm:px-0">
+        {/* Payment Processing Notice */}
+        <div className="mb-6 p-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-yellow-500 animate-spin" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+            </svg>
+            <div>
+              <h3 className="text-yellow-400 font-medium">Payment Processing</h3>
+              <p className="text-yellow-300 text-sm">Your payment is being processed. You can start your interview while we confirm the payment. Status will update automatically.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Interview Content */}
+        <div className="mb-6">
+          <h3 className="text-xl sm:text-2xl font-semibold mb-2">
+            {t("interview.title")}
+          </h3>
+          <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+            <span>Candidate: {interview.candidate_name}</span>
+            <span>Language: {interview.language?.toUpperCase()}</span>
+            <span>Duration: {interview.duration || "N/A"}</span>
+          </div>
+        </div>
+
+        <Agent
+          interviewId={interviewId || ""}
+          questions={interview.interview_questions}
+          type="interview"
+          userName={interview.candidate_name || ""}
+          interviewerConfig={getInterviewerConfig(
+            interview.language,
+            interview.candidate_name
+          )}
+        />
+      </div>
+    );
+  }
 
   if (interview.payment_status !== "completed") {
     console.log("❌ Payment not completed:", {

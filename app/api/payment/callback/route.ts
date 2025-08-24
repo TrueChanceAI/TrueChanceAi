@@ -165,6 +165,51 @@ export async function POST(req: NextRequest) {
               "Other status mapping logic"
     });
 
+    // EDFA Fast Payment Flow: If we have a transaction ID and SALE action, 
+    // assume payment is processing and allow immediate access
+    if (callbackData.action === "SALE" && callbackData.trans_id && paymentStatus === "pending") {
+      console.log(`🚀 EDFA Fast Flow: Payment has transaction ID, allowing immediate access`);
+      
+      // Update payment order status to pending
+      if (payment_order.status !== "pending") {
+        const { error: updateError } = await supabaseServer
+          .from("payment_orders")
+          .update({
+            status: "pending",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", paymentId);
+
+        if (updateError) {
+          console.error("Failed to update payment order status:", updateError);
+        }
+      }
+
+      // Update interview to pending status
+      const { error: updateInterviewError } = await supabaseServer
+        .from("interviews")
+        .update({ payment_id: paymentId, payment_status: "pending" })
+        .eq("id", payment_order.interview_id);
+
+      if (updateInterviewError) {
+        console.error("Failed to update interview:", updateInterviewError);
+      }
+
+      // For EDFA, redirect to interview page immediately when we have a transaction ID
+      // The payment will be monitored in the background
+      const url = process.env.NEXT_PUBLIC_APP_URL;
+      const interviewUrl = `/interview?interviewId=${payment_order.interview_id}&paymentId=${paymentId}`;
+      console.log(`🚀 Fast redirect to interview: ${interviewUrl}`);
+      
+      return NextResponse.json({ 
+        success: true, 
+        status: "pending",
+        payment_id: paymentId,
+        redirect_url: interviewUrl,
+        message: "Payment processing - redirecting to interview"
+      });
+    }
+
     // Only update if the new status is different from current status
     if (payment_order.status !== paymentStatus) {
       console.log(`Updating payment status from ${payment_order.status} to ${paymentStatus}`);
