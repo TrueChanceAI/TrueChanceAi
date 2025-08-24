@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       paymentStatus = "completed";
     } else if (status === "declined" || status === "DECLINED" || status === "failed" || status === "FAILED" || status === "error" || status === "ERROR" || result === "failed" || result === "FAILED" || result === "error" || result === "ERROR") {
       paymentStatus = "failed";
-    } else if (status === "pending" || status === "PENDING" || status === "processing" || status === "PROCESSING" || result === "pending" || result === "PENDING") {
+    } else if (status === "pending" || status === "PENDING" || status === "processing" || status === "PROCESSING" || status === "redirect" || status === "REDIRECT" || result === "pending" || result === "PENDING" || result === "redirect" || result === "REDIRECT") {
       paymentStatus = "pending";
     } else if (status === "cancelled" || status === "CANCELLED" || status === "canceled" || status === "CANCELED") {
       paymentStatus = "cancelled";
@@ -116,6 +116,8 @@ export async function POST(req: NextRequest) {
       mappedStatus: paymentStatus,
       reason: status === "SETTLED" ? "SETTLED status from EDFA" : 
               result === "SUCCESS" ? "SUCCESS result from EDFA" :
+              status === "REDIRECT" ? "REDIRECT status - 3D Secure authentication required (payment processing)" :
+              result === "REDIRECT" ? "REDIRECT result - 3D Secure authentication required (payment processing)" :
               "Other status mapping logic"
     });
 
@@ -288,11 +290,11 @@ export async function GET(req: NextRequest) {
               paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
             } else if (status === "3ds") {
-              paymentStatus = "failed"; // Use valid database status
-              redirectUrl = "/payment-failed";
-            } else if (status === "redirect") {
-              paymentStatus = "failed"; // Use valid database status
-              redirectUrl = "/payment-failed";
+              paymentStatus = "pending"; // REDIRECT/3DS means payment is processing, not failed
+              redirectUrl = "/upload-resume"; // Keep user on the page to wait for completion
+            } else if (status === "redirect" || status === "REDIRECT") {
+              paymentStatus = "pending"; // REDIRECT means 3D Secure authentication, payment is processing
+              redirectUrl = "/upload-resume"; // Keep user on the page to wait for completion
             } else if (status === "refund") {
               paymentStatus = "failed"; // Use valid database status
               redirectUrl = "/payment-failed";
